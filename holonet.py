@@ -8,7 +8,7 @@ import torch.nn as nn
 
 import utils.utils as utils
 from propagation_ASM import propagation_ASM
-from utils.pytorch_prototyping.pytorch_prototyping import Conv2dSame, Unet,vunet_augumented_single
+from utils.pytorch_prototyping.pytorch_prototyping import Conv2dSame, Unet,vunet_augumented_single,vunet_augumented
 
 
 class InitialPhaseUnet(nn.Module):
@@ -113,8 +113,19 @@ class VUnet_Aug_single(nn.Module):
         net=[vunet_augumented_single()]
         self.net=nn.Sequential(*net)
 
-    def forward(self,target_amp):
-        out_phase=self.net(target_amp)
+    def forward(self,input):
+        out_phase=self.net([input[0],input[1]])
+        return (torch.ones(1),out_phase)
+    
+class VUnet_Aug(nn.Module):
+    def __init__(self):
+        super(VUnet_Aug,self).__init__()
+
+        net=[vunet_augumented()]
+        self.net=nn.Sequential(*net)
+
+    def forward(self,input):
+        out_phase=self.net([input[0],input[1]])
         return (torch.ones(1),out_phase)
 
 
@@ -148,6 +159,47 @@ class HoloZonePlateNet(nn.Module):
         target_complex = torch.complex(real, imag)
         target_complex_diff = target_complex
 
+        # implement the basic propagation to the SLM plane
+        slm_naive = self.prop(target_complex_diff, self.feature_size,
+                              self.wavelength, distance,
+                              precomped_H=None,
+                              linear_conv=self.linear_conv)
+        # switch to amplitude+phase and apply source amplitude adjustment
+        amp, ang = utils.rect_to_polar(slm_naive.real, slm_naive.imag)
+        slm_amp_phase = torch.cat((amp, ang), -3)
+
+        return amp, self.final_phase_only(slm_amp_phase)
+    
+
+
+class HoloZonePlateNet2ch(nn.Module):
+    def __init__(self, initial_phase,final_phase_only,num_down=10, num_features_init=16, norm=nn.BatchNorm2d,feature_size=6.4e-6,wavelength=520e-9,linear_conv=True):
+        super(HoloZonePlateNet2ch, self).__init__()
+        self.num_down=num_down
+        self.num_features_init=num_features_init
+        self.norm=norm
+        self.feature_size = (feature_size
+                        if hasattr(feature_size, '__len__')
+                        else [feature_size] * 2)
+        self.wavelength=wavelength
+        self.linear_conv=linear_conv
+        self.initial_phase=initial_phase
+        self.final_phase_only=final_phase_only
+        self.proptype="ASM"
+        self.precomped_H = None
+        self.prop = propagation_ASM
+        self.dev = torch.device('cuda')
+
+    def forward(self, x):
+        target_amp=x[0]
+        input_img=x[1]
+        distance=-x[2]
+    
+        init_phase = self.initial_phase(input_img)
+        real, imag = utils.polar_to_rect(target_amp, init_phase)
+        target_complex = torch.complex(real, imag)
+        target_complex_diff = target_complex
+ 
         # implement the basic propagation to the SLM plane
         slm_naive = self.prop(target_complex_diff, self.feature_size,
                               self.wavelength, distance,
