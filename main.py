@@ -50,7 +50,7 @@ p.add_argument('--train', type=int, default=0, help='train:0, evaluate:1')
 p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, Augmented Conditional Unet:1')
 p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
 p.add_argument('--compare', type=int, default=1, help='if 0, this code will compare to DPAC and back propagation')
-p.add_argument('--root_path', type=str, default='./phases', help='Directory where optimized phases will be saved.')
+p.add_argument('--root_path', type=str, default='/images/phases', help='Directory where optimized phases will be saved.')
 p.add_argument('--data_path', type=str, default='/images/div_and_flickr', help='Directory for the dataset')
 p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='Directory for the dataset')
 p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
@@ -67,7 +67,7 @@ distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect Changed P
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}"
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
-print(f'   - optimizing phase with {model_type_name}/{distance_to_image_name} ... ')
+print(f'   - optimizing phase with {model_type_name}/{distance_to_image_name}/{chan_str} ... ')
 
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
@@ -134,7 +134,7 @@ image_loader = ImageLoader(opt.data_path, channel=channel,
                            shuffle=False, vertical_flips=False, horizontal_flips=False)
 
 # loads images from disk, set to augment with flipping
-val_loader =  ImageLoader(opt.data_path, channel=channel,
+val_loader =  ImageLoader(opt.val_path, channel=channel,
                            image_res=image_res, homography_res=roi_res,
                            crop_to_homography=True,
                            shuffle=False, vertical_flips=False, horizontal_flips=False)
