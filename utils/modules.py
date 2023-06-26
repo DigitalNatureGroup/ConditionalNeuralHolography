@@ -155,12 +155,14 @@ class SGD(nn.Module):
         self.loss = loss.to(device)
 
     def forward(self, target_amp, init_phase=None):
+
         # Pre-compute propagataion kernel only once
         if self.precomputed_H is None and self.prop_model == 'ASM':
             self.precomputed_H = self.prop(torch.empty(*init_phase.shape, dtype=torch.complex64), self.feature_size,
                                            self.wavelength, self.prop_dist, return_H=True)
             self.precomputed_H = self.precomputed_H.to(self.dev).detach()
             self.precomputed_H.requires_grad = False
+
 
         # Run algorithm
         final_phase = stochastic_gradient_descent(init_phase, target_amp, self.num_iters, self.prop_dist,
@@ -169,8 +171,9 @@ class SGD(nn.Module):
                                                   prop_model=self.prop_model, propagator=self.prop,
                                                   loss=self.loss, lr=self.lr, lr_s=self.lr_s, s0=self.init_scale,
                                                   citl=self.citl, camera_prop=self.camera_prop,
-                                                  writer=self.writer,
-                                                  precomputed_H=self.precomputed_H)
+                                                  
+                                                  precomputed_H=self.precomputed_H,
+                                                  writer=self.writer)
         return final_phase
 
     @property

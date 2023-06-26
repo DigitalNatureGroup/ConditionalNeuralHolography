@@ -55,6 +55,8 @@ p.add_argument('--data_path', type=str, default='/images/div_and_flickr', help='
 p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='Directory for the dataset')
 p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
                help='Directory for the pretrained holonet/unet network')
+p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
+p.add_argument('--dis_interval', type=int, default=200000, help='interval of distances')
 
 # parse arguments
 opt = p.parse_args()
@@ -64,7 +66,9 @@ DISTANCE_TO_IMAGE= opt.distance_to_image==0
 status_name="Train" if TRAIN else "Eavl"
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented Conditional Unet"
 distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect Changed Phase"
-run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}"
+start_dis=opt.start_dis
+dis_interval=opt.dis_interval
+run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{dis_interval}"
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
 print(f'   - optimizing phase with {model_type_name}/{distance_to_image_name}/{chan_str} ... ')
@@ -147,8 +151,8 @@ num_epochs=10
 #################
 
 ik=0
-start = 0.2+wavelength/2
-end = 0.2+wavelength/2+200000*wavelength
+start = start_dis+wavelength/2
+end = start_dis+wavelength/2+dis_interval*wavelength
 num_splits = 100
 
 step = (end - start) / num_splits

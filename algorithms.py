@@ -81,39 +81,14 @@ def stochastic_gradient_descent(init_phase, target_amp, num_iters, prop_dist, wa
                                 loss=nn.MSELoss(), lr=0.01, lr_s=0.003, s0=1.0, citl=False, camera_prop=None,
                                 writer=None, dtype=torch.float32, precomputed_H=None):
 
-    """
-    Given the initial guess, run the SGD algorithm to calculate the optimal phase pattern of spatial light modulator.
-
-    Input
-    ------
-    :param init_phase: a tensor, in the shape of (1,1,H,W), initial guess for the phase.
-    :param target_amp: a tensor, in the shape of (1,1,H,W), the amplitude of the target image.
-    :param num_iters: the number of iterations to run the SGD.
-    :param prop_dist: propagation distance in m.
-    :param wavelength: wavelength in m.
-    :param feature_size: the SLM pixel pitch, in meters, default 6.4e-6
-    :param roi_res: a tuple of integer, region of interest, like (880, 1600)
-    :param phase_path: a string, for saving intermediate phases
-    :param prop_model: a string, that indicates the propagation model. ('ASM' or 'MODEL')
-    :param propagator: predefined function or model instance for the propagation.
-    :param loss: loss function, default L2
-    :param lr: learning rate for optimization variables
-    :param lr_s: learning rate for learnable scale
-    :param s0: initial scale
-    :param writer: Tensorboard writer instance
-    :param dtype: default torch.float32
-    :param precomputed_H: A Pytorch complex64 tensor, pre-computed kernel shape of (1,1,2H,2W) for fast computation.
-
-    Output
-    ------
-    :return: a tensor, the optimized phase pattern at the SLM plane, in the shape of (1,1,H,W)
-    """
+   
 
     device = init_phase.device
     s = torch.tensor(s0, requires_grad=True, device=device)
 
     # phase at the slm plane
     slm_phase = init_phase.requires_grad_(True)
+
 
     # optimization variables and adam optimizer
     optvars = [{'params': slm_phase}]
@@ -126,12 +101,10 @@ def stochastic_gradient_descent(init_phase, target_amp, num_iters, prop_dist, wa
 
     # run the iterative algorithm
     for k in range(num_iters):
-        print(k)
         optimizer.zero_grad()
         # forward propagation from the SLM plane to the target plane
         real, imag = utils.polar_to_rect(torch.ones_like(slm_phase), slm_phase)
         slm_field = torch.complex(real, imag)
-
         recon_field = utils.propagate_field(slm_field, propagator, prop_dist, wavelength, feature_size,
                                             prop_model, dtype, precomputed_H)
 
@@ -143,13 +116,11 @@ def stochastic_gradient_descent(init_phase, target_amp, num_iters, prop_dist, wa
 
         # camera-in-the-loop technique
         if citl:
-            captured_amp = camera_prop(slm_phase)
-
-            # use the gradient of proxy, replacing the amplitudes
-            # captured_amp is assumed that its size already matches that of recon_amp
-            out_amp = recon_amp + (captured_amp - recon_amp).detach()
+            
+            pass
         else:
             out_amp = recon_amp
+
 
         # calculate loss and backprop
         lossValue = loss(s * out_amp, target_amp)
