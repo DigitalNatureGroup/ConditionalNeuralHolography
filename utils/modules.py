@@ -127,18 +127,21 @@ class SGD(nn.Module):
     init_phase: initial guess of phase of phase-only slm
     final_phase: optimized phase-only representation at SLM plane, same dimensions
     """
-    def __init__(self, prop_dist, wavelength, feature_size, num_iters, roi_res, phase_path=None, prop_model='ASM',
+    def __init__(self, num_distances, start_dis,end_dis,alpha,target_shape,wavelength,feature_size, num_iters, roi_res, phase_path=None, prop_model='ASM',
                  propagator=None, loss=nn.MSELoss(), lr=0.01, lr_s=0.003, s0=1.0, citl=False, camera_prop=None,
                  writer=None, device=torch.device('cuda')):
         super(SGD, self).__init__()
 
         # Setting parameters
-        self.prop_dist = prop_dist
+        self.num_distances = num_distances
+        self.start_dis=start_dis
+        self.end_dis=end_dis
+        self.alpha=alpha
+        self.target_shape=target_shape
         self.wavelength = wavelength
         self.feature_size = feature_size
         self.roi_res = roi_res
         self.phase_path = phase_path
-        self.precomputed_H = None
         self.prop_model = prop_model
         self.prop = propagator
 
@@ -152,28 +155,39 @@ class SGD(nn.Module):
 
         self.writer = writer
         self.dev = device
+        print("loss",loss)
         self.loss = loss.to(device)
+       
 
-    def forward(self, target_amp, init_phase=None):
+        start = self.start_dis+self.wavelength/self.alpha
+        end = self.start_dis+self.wavelength/self.alpha+self.end_dis*self.wavelength
+        step = (end - start) / self.num_distances
+        self.distancebox = [start + step * i for i in range(self.num_distances + 1)]
 
+        self.preH_array=[]
+
+        for c,d in enumerate(self.distancebox):
+            temp_H=self.prop(torch.empty(target_shape, dtype=torch.complex64), self.feature_size,self.wavelength,-d, return_H=True)
+            temp_H=temp_H.to(self.dev).detach()
+            temp_H.requires_grad = False
+            self.preH_array.append(temp_H)
+            print(f"Calculating Kernel {c+1}/{num_distances}")
+
+            
+
+
+    def forward(self, target_amp,init_phase=None,ikk=0):
         # Pre-compute propagataion kernel only once
-        if self.precomputed_H is None and self.prop_model == 'ASM':
-            self.precomputed_H = self.prop(torch.empty(*init_phase.shape, dtype=torch.complex64), self.feature_size,
-                                           self.wavelength, self.prop_dist, return_H=True)
-            self.precomputed_H = self.precomputed_H.to(self.dev).detach()
-            self.precomputed_H.requires_grad = False
-
 
         # Run algorithm
-        final_phase = stochastic_gradient_descent(init_phase, target_amp, self.num_iters, self.prop_dist,
+        final_phase = stochastic_gradient_descent(init_phase, target_amp, self.num_iters, -self.distancebox[ikk],
                                                   self.wavelength, self.feature_size,
                                                   roi_res=self.roi_res, phase_path=self.phase_path,
                                                   prop_model=self.prop_model, propagator=self.prop,
                                                   loss=self.loss, lr=self.lr, lr_s=self.lr_s, s0=self.init_scale,
                                                   citl=self.citl, camera_prop=self.camera_prop,
-                                                  
-                                                  precomputed_H=self.precomputed_H,
-                                                  writer=self.writer)
+                                                  writer=self.writer,
+                                                  precomputed_H=self.preH_array[ikk])
         return final_phase
 
     @property
@@ -234,7 +248,7 @@ class DPAC(nn.Module):
     final_phase: optimized phase-only representation at SLM plane, same dimensions
 
     """
-    def __init__(self, prop_dist, wavelength, feature_size, prop_model='ASM', propagator=None,
+    def __init__(self,num_distances, start_dis,end_dis,alpha,target_shape, wavelength, feature_size, prop_model='ASM', propagator=None,
                  device=torch.device('cuda')):
         """
 
@@ -242,29 +256,40 @@ class DPAC(nn.Module):
         super(DPAC, self).__init__()
 
         # propagation is from target to SLM plane (one step)
-        self.prop_dist = -prop_dist
+        self.num_distances = num_distances
+        self.start_dis=start_dis
+        self.end_dis=end_dis
+        self.alpha=alpha
         self.wavelength = wavelength
         self.feature_size = feature_size
-        self.precomputed_H = None
         self.prop_model = prop_model
         self.prop = propagator
         self.dev = device
 
-    def forward(self, target_amp, target_phase=None):
+        start = self.start_dis+self.wavelength/self.alpha
+        end = self.start_dis+self.wavelength/self.alpha+self.end_dis*self.wavelength
+        step = (end - start) / self.num_distances
+        self.distancebox = [start + step * i for i in range(self.num_distances + 1)]
+
+        self.preH_array=[]
+
+        for c,d in enumerate(self.distancebox):
+            temp_H=self.prop(torch.empty(target_shape, dtype=torch.complex64), self.feature_size,self.wavelength,-d, return_H=True)
+            temp_H=temp_H.to(self.dev).detach()
+            temp_H.requires_grad = False
+            self.preH_array.append(temp_H)
+            print(f"Calculating Kernel {c+1}/{num_distances}")
+
+    def forward(self, target_amp, target_phase=None,ikk=0):
         if target_phase is None:
             target_phase = torch.zeros_like(target_amp)
 
-        if self.precomputed_H is None and self.prop_model == 'ASM':
-            self.precomputed_H = self.prop(torch.empty(*target_amp.shape, dtype=torch.complex64), self.feature_size,
-                                           self.wavelength, self.prop_dist, return_H=True)
-            self.precomputed_H = self.precomputed_H.to(self.dev).detach()
-            self.precomputed_H.requires_grad = False
 
-        final_phase = double_phase_amplitude_coding(target_phase, target_amp, self.prop_dist,
+        final_phase = double_phase_amplitude_coding(target_phase, target_amp, -self.distancebox[ikk],
                                                     self.wavelength, self.feature_size,
                                                     prop_model=self.prop_model, propagator=self.prop,
-                                                    precomputed_H=self.precomputed_H)
-        return None, final_phase
+                                                    precomputed_H=self.preH_array[ikk])
+        return final_phase
 
     @property
     def phase_path(self):

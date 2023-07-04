@@ -56,7 +56,9 @@ p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='D
 p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
                help='Directory for the pretrained holonet/unet network')
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
-p.add_argument('--dis_interval', type=int, default=200000, help='interval of distances')
+p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
+p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
+p.add_argument('--num_split', type=int, default=100, help='number of distance points')
 
 # parse arguments
 opt = p.parse_args()
@@ -67,11 +69,13 @@ status_name="Train" if TRAIN else "Eavl"
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented Conditional Unet"
 distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect Changed Phase"
 start_dis=opt.start_dis
-dis_interval=opt.dis_interval
-run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{dis_interval}"
+alpha=opt.alpha
+num_splits=opt.num_split
+end_dis=opt.end_dis
+run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}"
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
-print(f'   - optimizing phase with {model_type_name}/{distance_to_image_name}/{chan_str} ... ')
+print(f'   - optimizing phase with {run_id} ... ')
 
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
@@ -151,9 +155,8 @@ num_epochs=10
 #################
 
 ik=0
-start = start_dis+wavelength/2
-end = start_dis+wavelength/2+dis_interval*wavelength
-num_splits = 100
+start = start_dis+wavelength/alpha
+end = start_dis+wavelength/alpha+end_dis*wavelength
 
 step = (end - start) / num_splits
 distancebox = [start + step * i for i in range(num_splits + 1)]
