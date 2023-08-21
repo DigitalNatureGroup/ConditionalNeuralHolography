@@ -39,69 +39,39 @@ if __name__ == "__main__":
     # ]
 
     log_array=[
-        "/images/comapre/Eval_Augmented_Conditional_Unet_Reflect_Changed_Phase/green/summaries/events.out.tfevents.1687150958.1b4102e0c273.524.0",
-        "/images/comapre/Eval_Augmented_Conditional_Unet_Zone_Plate/green/summaries/events.out.tfevents.1686967032.89b898dc9c78.852.0",
-        "/images/comapre/Eval_Augmented_Holonet_Reflect_Changed_Phase/green/summaries/events.out.tfevents.1686966971.1b4102e0c273.350.0",
-        "/images/comapre/Eval_Augmented_Holonet_Zone_Plate/green/summaries/events.out.tfevents.1686966819.839d54aa5f67.1353.0"
+        "/images/compare/Eval_Augmented_Holonet_Zone_Plate_0.2_200000_1000/green/summaries/events.out.tfevents.1690788301.a41e39c63788.554.0",
+        "/images/compare/Eval_Augmented_Holonet_Zone_Plate_0.2_600000_100/green/summaries/events.out.tfevents.1690787533.89b898dc9c78.127.0",
+        "/images/compare/Eval_Augmented_Holonet_Zone_Plate_0.2_600000_1000/green/summaries/events.out.tfevents.1690788339.1b4102e0c273.379.0",
+        # "/images/compare/Eval_Augmented_Holonet_Zone_Plate_0.1_180000_100/green/summaries/",
+        # "/images/compare/Eval_Augmented_Holonet_Zone_Plate_0.1_180000_1000/green/summaries/",
     ]
 
-    # log_array=[
-    #     "/images/comapre/GS/green/summaries/events.out.tfevents.1686647250.89b898dc9c78.730.0"
-    # ]
+    names=[
+        "eval_0.2_0.3_1000",
+        "eval_0.2_0.5_100",
+        "eval_0.2_0.5_1000",
+        # "eval_0.1_1.0_100",
+        # "eval_0.1_1.0_1000"
+    ]
 
     out_array=[
         "/images/final_output",
         "/images/final_output",
         "/images/final_output",
-        "/images/final_output"
+        # "/images/final_output",
+        # "/images/final_output",
     ]
 
-    # out_array=[
-   
-    # ]
-
-    # log_array=[
-     
-    # ]
     
-    names=[
-        "eavl_unet_shift",
-        "eval_unet_zone",
-        "eval_holo_shift",
-        "eval_holo_zone"
+
+    
+
+    tag=[
+        "PSNR_1",
+        "Time_1"
     ]
 
-    # tag=[
-    #     "PSNR_1",
-    #     "PSNR_101",
-    #     "PSNR_201",
-    #     "PSNR_301",
-    #     "PSNR_401",
-    #     "PSNR_501",
-    #     "PSNR_601",
-    #     "PSNR_701",
-    #     "PSNR_801",
-    #     "PSNR_901",
-    #     "PSNR_1001",
-    #     "Time_1",
-    #     "Time_101",
-    #     "Time_201",
-    #     "Time_301",
-    #     "Time_401",
-    #     "Time_501",
-    #     "Time_601",
-    #     "Time_701",
-    #     "Time_801",
-    #     "Time_901",
-    #     "Time_1001",
-    # ]
 
-    # names=[
-    #     "train_holo_zone",
-    #     "train_holo_shift",
-    #     "train_cunet_zone",
-    #     "train_cunet_shift"
-    # ]
 
     for i in range(len(log_array)):
         export_scalars_to_csv(log_array[i],out_array[i],None,names[i])

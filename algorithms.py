@@ -15,6 +15,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import gc
 
 import utils.utils as utils
 from propagation_ASM import *
@@ -126,13 +127,6 @@ def stochastic_gradient_descent(init_phase, target_amp, num_iters, prop_dist, wa
         lossValue = loss(s * out_amp, target_amp)
         lossValue.backward()
         optimizer.step()
-
-        # write to tensorboard / write phase image
-        # Note that it takes 0.~ s for writing it to tensorboard
-        with torch.no_grad():
-            if k % 50 == 0:
-                utils.write_sgd_summary(slm_phase, out_amp, target_amp, k,
-                                        writer=writer, path=phase_path, s=s, prefix='test')
 
     return slm_phase
 
