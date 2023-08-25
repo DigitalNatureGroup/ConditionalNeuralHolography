@@ -101,9 +101,6 @@ device = torch.device('cuda')  # The gpu you are using
 print("device",device)
 print("count",torch.cuda.device_count())
 
-# Options for the algorithm
-
-
 s0 = 0.95  # initial scaled
 
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
@@ -125,7 +122,6 @@ def delete_file(path):
     else:
         print(f"No such file: {path}")
 
-# ファイルパスを指定
 dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv'
 delete_file(dd_path)
 
@@ -141,11 +137,9 @@ print(image_res,roi_res)
 ik=0
 start = start_dis+wavelength/alpha
 end = start_dis+wavelength/alpha+end_dis*wavelength
-# num_splits = 10
 
 step = (end - start) / num_splits
 distancebox = [start + step * i for i in range(num_splits + 1)]
-## カーネルが既にあるかどうかを確認
 if(os.path.isdir(kernel_path)):
     pass
 else:
@@ -191,9 +185,7 @@ else:
             print(f"Calculating Zone Plate {c+1}/{len(distancebox)}")
 
 plateLoader=KernelLoader(plate_path)
-
 init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
-
 
 if gen_type==0:
     
@@ -269,86 +261,15 @@ for l,num_iters in enumerate(num_iters_array):
 
     for target in (val_loader):
 
-
         for k in range(num_splits):
             if k%(num_splits//100)==0:
-
-                # get target image
-                target_amp, target_res,target_filename = target
-                distance=distancebox[k]
                 ik+=1
-                target_amp = target_amp.to(device)
-                # distance=distance[0]
-                # slm_phase=0
-
-
                 computing_time=0 
 
-
-
-                if gen_type==4:
-            
-                    with torch.no_grad():
-                        start_time=time.perf_counter()
-                        ## target_ampにconcat
-                        if DISTANCE_TO_IMAGE:
-                            with torch.no_grad():
-                                point_light=torch.zeros(1,1,image_res[0],image_res[1],dtype=torch.float32).to(device)
-                                print("zp_dis",distance)
-                                point_light[0, 0, image_res[0]//2-1:image_res[0]//2+1, image_res[1]//2-1:image_res[1]//2+1] = 1.0
-                                model_prop = ModelPropagate(distance=distance, feature_size=feature_size, wavelength=wavelength,
-                                            target_field=False, num_gaussians=0, num_coeffs_fourier=0,
-                                            use_conv1d_mlp=False, num_latent_codes=[0],
-                                            norm=None, blur=None, content_field=False, proptype="ASM").to(device)
-                                model_prop.eval()
-                                zone_plate=torch.angle(model_prop(point_light))
-                                zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))
-                                inputs=zone_plate
-                                print(zone_plate)
-                        else:
-                            
-                                complex_amp=target_amp.to(torch.complex128)*cmath.exp(1j*distance)
-                                real_part=complex_amp.real
-                                imag_part=complex_amp.imag
-                                inputs=torch.cat([real_part,imag_part],1)
-                                inputs=inputs.to(torch.float32)
-
-                        # forward model
-                        slm_amp, slm_phase = phase_generator([target_amp,inputs,distance])
-                        computing_time=time.perf_counter()-start_time
-                #use DPAC
-                elif gen_type== 1:
-                    pass
-                    # phase_only_algorithm = DPAC(distance, wavelength, feature_size, "ASM", propagator, device)
-                    # start_time=time.perf_counter()
-                    # _,slm_phase=phase_only_algorithm(target_amp)
-                    # computing_time=time.perf_counter()-start_time
+                target_amp, target_res,target_filename = target
+                distance=distancebox[k]
+                target_amp = target_amp.to(device)
                 
-                #use SGD
-                elif gen_type == 2:
-                    # init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
-                    # phase_only_algorithm = SGD(distance, wavelength, feature_size, num_iters, roi_res, root_path,
-                    #                 'ASM',propagation_ASM, nn.MSELoss().to(device), 8e-3, 2e-3, s0, False, None, writer, device)
-                    pass
-                    # start_time=time.perf_counter()
-                    # slm_phase=phase_only_algorithm(target_amp,init_phase)
-                    # computing_time=time.perf_counter()-start_time
-                #use GS
-                elif gen_type == 3:
-                    pass
-                    # init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
-                    # phase_only_algorithm = GS(distance, wavelength, feature_size, num_iters, root_path,
-                    #                 "ASM", propagation_ASM, writer, device)
-                    # start_time=time.perf_counter()
-                    # slm_phase=phase_only_algorithm(target_amp,init_phase)
-                    # computing_time=time.perf_counter()-start_time
-
-
-                #use ASM
-                
-                # phase_only_algorithm.init_scale = s0 * utils.crop_image(target_amp, roi_res, stacked_complex=False).mean()
-                # phase_only_algorithm.phase_path = os.path.join(root_path)
-
                 preH=kLoader[k].to(device)
                 preH.requires_grad=False
                 preHb=kbLoder[k].to(device)
@@ -357,7 +278,6 @@ for l,num_iters in enumerate(num_iters_array):
                 plate.requires_grad=False
 
                 start_time=time.perf_counter() 
-                # print(phase_only_algorithm)
             
                 if gen_type==0:
                     with torch.no_grad():
@@ -378,27 +298,16 @@ for l,num_iters in enumerate(num_iters_array):
                     print("runtime",runtime)
                     record_time=runtime
 
-
                     real, imag = utils.polar_to_rect(torch.ones_like(slm_phase), slm_phase)
                     slm_field = torch.complex(real, imag)
-
                     output_complex=utils.propagate_field(slm_field,propagator,distance,wavelength,feature_size,"ASM",dtype = torch.float32,precomputed_H=preH)
-
-                    # output_lin_intensity = torch.sum(output_complex.abs()**2 * 0.95, dim=1, keepdim=True)
-                    # output_amp = torch.pow(output_lin_intensity, 0.5)
                     target_amp = utils.crop_image(target_amp, target_shape=roi_res, stacked_complex=False).to(device)
-
                     output_amp=output_complex.abs()
                     recon_amp=utils.crop_image(output_amp, target_shape=roi_res, stacked_complex=False)
                     
-                    ## これ解明
                     recon_amp *= (torch.sum(recon_amp * target_amp, (-2, -1), keepdim=True)
                         / torch.sum(recon_amp * recon_amp, (-2, -1), keepdim=True))
-
-
                     target_res=target_res[0]
-
-                    ## PSNRを計算
 
                     def psnr(tensor1, tensor2):
                         mse = F.mse_loss(tensor1, tensor2)
@@ -406,23 +315,16 @@ for l,num_iters in enumerate(num_iters_array):
                         psnr = 20 * math.log10(max_pixel_value) - 10 * math.log10(mse.item())
                         return psnr
                     
-                    # GPU上のテンソルをCPUにコピー
                     target_amp_cpu = target_amp[0,0,:,:].to('cpu')
                     loss_main_cpu =recon_amp[0,0,:,:].to('cpu')
 
-                    # 画像として見做した時のPSNRを計算
                     psnr_value = psnr(target_amp_cpu, loss_main_cpu)
-
                     print(f'image_No {ik} PSNR:{psnr_value}w/{target_filename}@{distance}')
                     log_records.append([ik, psnr_value])
 
-
                     if ik % log_interval == 0:
                         with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv', 'a', newline='') as file:
-                            writer = csv.writer(file)
-                            writer.writerows(log_records)
+                            writer_csv = csv.writer(file)
+                            writer_csv.writerows(log_records)
                             log_records = []
                             print(f'Saved log at iteration: {ik}')
-
-
-    # # writer.close()
