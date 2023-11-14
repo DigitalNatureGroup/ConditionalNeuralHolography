@@ -55,6 +55,8 @@ p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
 p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
 p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
 p.add_argument('--num_split', type=int, default=100, help='number of distance points')
+p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 4.2, set 1")
+p.add_argument('--actual',type=int, default=0,help="if you actual experiment mode set 1")
 # p.add_argument('--num_iters', type=int, default=1, help='number of iteraion used in GS & SGD')
 p.add_argument('--root_path', type=str, default='/images/compare', help='Directory where optimized phases will be saved.')
 p.add_argument('--kernel_path', type=str, default='/images/kernels', help='Directory where optimized phases will be saved.')
@@ -71,6 +73,8 @@ gen_type=opt.gen_type
 
 MODEL_TYPE=opt.model_type==0
 DISTANCE_TO_IMAGE= opt.distance_to_image==0 
+OUT_ALPHA=opt.out_alpha==1
+ACTURAL_MODE=opt.actual==1
 status_name="Eval"
 
 num_splits=opt.num_split
@@ -83,6 +87,8 @@ alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}" if (gen_type==0 or gen_type==4) else gen_string
+run_id=run_id+"_out" if OUT_ALPHA else run_id
+run_id=run_id+"actual" if ACTURAL_MODE else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
 print("getntype",gen_type)
@@ -92,7 +98,7 @@ print(f'   - eavaluating phase with {run_id} ... ')
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 prop_dist = (20 * cm, 20 * cm, 20 * cm)[channel]  # propagation distance from SLM plane to target plane
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (6.4 * um, 6.4 * um)  # SLM pitch
+feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) # SLM pitch
 slm_res = (1024, 2048)  # resolution of SLM
 image_res=slm_res
 roi_res=(880,1600)
@@ -106,6 +112,10 @@ s0 = 0.95  # initial scaled
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
 kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}')
 plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}')
+kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
+plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
+kernel_path = kernel_path+"_actual" if ACTURAL_MODE else kernel_path
+plate_path=plate_path+"_actual" if ACTURAL_MODE else plate_path
 
 # Tensorboard writer
 summaries_dir = os.path.join(root_path, 'summaries')
@@ -122,8 +132,10 @@ def delete_file(path):
     else:
         print(f"No such file: {path}")
 
-dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv'
+dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{ACTURAL_MODE}.csv'
+dt_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{ACTURAL_MODE}.txt'
 delete_file(dd_path)
+delete_file(dt_path)
 
 
 
@@ -135,11 +147,22 @@ val_loader =  ImageLoader(opt.val_path, channel=channel,
 print(image_res,roi_res)
 
 ik=0
-start = start_dis+wavelength/alpha
-end = start_dis+wavelength/alpha+end_dis*wavelength
+### Calculate distance array
+print("out_alpha",OUT_ALPHA)
+if OUT_ALPHA:
+    phase_box=[0,wavelength/4,wavelength/2,3*wavelength/4,wavelength/8,wavelength/16,-1*wavelength/16,-1*wavelength/8,-1*wavelength/4,-1*wavelength/2,-3*wavelength/4]
+else:
+    phase_box=[wavelength*alpha]
 
-step = (end - start) / num_splits
-distancebox = [start + step * i for i in range(num_splits + 1)]
+distancebox=[]
+for a in phase_box:
+    start = start_dis+a
+    end = start_dis+a+end_dis*wavelength
+
+    step = (end - start) / num_splits
+    distancebox += [start + step * i for i in range(num_splits + 1)]
+distancebox=sorted(distancebox)
+
 if(os.path.isdir(kernel_path)):
     pass
 else:
@@ -251,8 +274,14 @@ if(gen_type==2 or gen_type==3):
 else :
     num_iters_array=[1]
 
-log_interval = 500  # Adjust this value to your needs
+log_interval = 100  # Adjust this value to your needs
 log_records = []
+ik_records=[]
+dis_records=[]
+name_records=[]
+first_log=True
+
+
 
 
 
@@ -261,7 +290,11 @@ for l,num_iters in enumerate(num_iters_array):
 
     for target in (val_loader):
 
-        for k in range(num_splits):
+        ###ここを臨時的に書き換える
+        ## 本来は range(len(distancebox)-1)
+        for k in range(len(distancebox)-1):
+            
+           
             if k%(num_splits//100)==0:
                 ik+=1
                 computing_time=0 
@@ -320,11 +353,29 @@ for l,num_iters in enumerate(num_iters_array):
 
                     psnr_value = psnr(target_amp_cpu, loss_main_cpu)
                     print(f'image_No {ik} PSNR:{psnr_value}w/{target_filename}@{distance}')
-                    log_records.append([ik, psnr_value])
+                    log_records.append(psnr_value)
+                    ik_records.append(ik)
+                    dis_records.append(distance)
+                    name_records.append(target_filename)
 
                     if ik % log_interval == 0:
+                        if(first_log):
+                            with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv', 'a', newline='') as file:
+                                writer_csv = csv.writer(file)
+                                writer_csv.writerows([dis_records])
+                                print(f'Saved log at iteration: {ik}')
+                                first_log=False
+
                         with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv', 'a', newline='') as file:
                             writer_csv = csv.writer(file)
-                            writer_csv.writerows(log_records)
-                            log_records = []
+                            writer_csv.writerows([log_records])
                             print(f'Saved log at iteration: {ik}')
+
+                        with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.txt', 'a') as file:
+                            for a,log in enumerate(log_records):
+                                file.write(f"{ik_records[a]}  {log}  distance:{dis_records[a]}  image:{name_records[a]}\n")
+                            log_records = []
+                            ik_records=[]
+                            dis_records=[]
+                            name_records=[]
+                            print(f'Saved log txt at iteration: {ik}')

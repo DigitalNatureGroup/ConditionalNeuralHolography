@@ -45,6 +45,8 @@ p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='D
 p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
                help='Directory for the pretrained holonet/unet network')
 p.add_argument('--original',type=int, default=0,help="if use Original HoloNet, set 1")
+p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 4.2, set 1")
+p.add_argument('--actual',type=int, default=0,help="if you actual experiment mode set 1")
 # Set propagation distance array
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
 p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
@@ -62,6 +64,8 @@ TRAIN= opt.train==0
 MODEL_TYPE=opt.model_type==0
 DISTANCE_TO_IMAGE= opt.distance_to_image==0 
 ORIGINAL=opt.original==1
+OUT_ALPHA=opt.out_alpha==1
+ACTURAL_MODE=opt.actual==1
 status_name="Train" if TRAIN else "Eavl"
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented Conditional Unet"
 if ORIGINAL:
@@ -72,18 +76,21 @@ alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}"
+run_id=run_id+"_out" if OUT_ALPHA else run_id
+run_id=run_id+"actual" if ACTURAL_MODE else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
-print(f'   - optimizing phase with {run_id} ... ')
+print(f'   - optimizing phase with pitch {run_id} ... ')
 
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (6.4 * um, 6.4 * um)  # SLM pitch
+feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
 slm_res = (1024, 2048)  # resolution of SLM
 image_res=roi_res=slm_res
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
 device = torch.device('cuda')  # The gpu you are using
+print(feature_size)
 
 # Options for the algorithm
 loss = nn.MSELoss().to(device)  # loss functions to use (try other loss functions!)
@@ -92,6 +99,10 @@ s0 = 0.95  # initial scale
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
 kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}')
 plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}')
+kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
+plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
+kernel_path = kernel_path+"_actual" if ACTURAL_MODE else kernel_path
+plate_path=plate_path+"_actual" if ACTURAL_MODE else plate_path
 
 
 # Tensorboard writer
@@ -100,11 +111,22 @@ utils.cond_mkdir(summaries_dir)
 writer = SummaryWriter(summaries_dir)
 
 ### Calculate distance array
-start = start_dis+wavelength/alpha
-end = start_dis+wavelength/alpha+end_dis*wavelength
+print("out_alpha",OUT_ALPHA)
+if OUT_ALPHA:
+    phase_box=[0,wavelength/4,wavelength/2,3*wavelength/4,wavelength/8,wavelength/16,-1*wavelength/16,-1*wavelength/8,-1*wavelength/4,-1*wavelength/2,-3*wavelength/4]
+else:
+    phase_box=[wavelength*alpha]
 
-step = (end - start) / num_splits
-distancebox = [start + step * i for i in range(num_splits + 1)]
+distancebox=[]
+for a in phase_box:
+    start = start_dis+a
+    end = start_dis+a+end_dis*wavelength
+
+    step = (end - start) / num_splits
+    distancebox += [start + step * i for i in range(num_splits + 1)]
+distancebox=sorted(distancebox)
+
+    
 
 if ORIGINAL:
     distancebox=[start]
@@ -233,9 +255,10 @@ for i in range(num_epochs):
         optimizer.zero_grad()
         # Get target image
         target_amp, target_res,target_filename = target
-        dis_k=0 if ORIGINAL else random.randrange(num_splits)
+        dis_k=0 if ORIGINAL else random.randrange(len(distancebox))
         target_amp = target_amp.to(device)
         # Load precomputed kernel
+        print("dis_k",dis_k)
         preH=kLoader[dis_k].to(device)
         preHb=kbLoder[dis_k].to(device)
         plate=plateLoader[dis_k].to(device)       
@@ -301,7 +324,7 @@ for i in range(num_epochs):
                         phase_generator.eval()
                         val_amp, val_res,_ = val_target 
                         val_amp=val_amp.to(device)
-                        val_k=0 if ORIGINAL else random.randrange(num_splits)
+                        val_k=0 if ORIGINAL else random.randrange(len(distancebox))
                         preH=kLoader[val_k].to(device)
                         preHb=kbLoder[val_k].to(device)
                         val_plate=plateLoader[val_k].to(device)
