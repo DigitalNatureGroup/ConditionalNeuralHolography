@@ -102,6 +102,7 @@ def stochastic_gradient_descent(init_phase, target_amp, num_iters, prop_dist, wa
 
     # run the iterative algorithm
     for k in range(num_iters):
+        print(k)
         optimizer.zero_grad()
         # forward propagation from the SLM plane to the target plane
         real, imag = utils.polar_to_rect(torch.ones_like(slm_phase), slm_phase)

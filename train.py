@@ -86,7 +86,7 @@ print(f'   - optimizing phase with pitch {run_id} ... ')
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
 feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
-slm_res = (1024, 2048)  # resolution of SLM
+slm_res = (1024, 2048)  if not ACTURAL_MODE else (2160,3840)
 image_res=roi_res=slm_res
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
 device = torch.device('cuda')  # The gpu you are using
