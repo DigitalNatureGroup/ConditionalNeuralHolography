@@ -462,8 +462,15 @@ class UnetSkipConnectionBlock(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, x):
+        mode = (x.size(-2)//2)%2!=0
+        if mode:
+            x=F.pad(x,(0,0,1,1),mode="reflect")
         forward_passed = self.model(x)
-        return torch.cat([x, forward_passed], 1)
+        res=torch.cat([x, forward_passed], 1)
+        if mode:
+            res=res[:,:,1:-1,:]
+        
+        return res
 
 
 class Unet(nn.Module):

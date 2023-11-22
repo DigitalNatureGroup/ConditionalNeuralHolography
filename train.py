@@ -30,6 +30,9 @@ from propagation_model import ModelPropagate
 from holonet import *
 from propagation_ASM import propagation_ASM
 
+context_path="./images"
+
+
 # Command line argument processing
 p = configargparse.ArgumentParser()
 # Select CNN model, Set appropriate path
@@ -38,10 +41,10 @@ p.add_argument('--train', type=int, default=0, help='train:0, evaluate:1')
 p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, Augmented Conditional Unet:1')
 p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
 p.add_argument('--compare', type=int, default=1, help='if 0, this code will compare to DPAC and back propagation')
-p.add_argument('--root_path', type=str, default='/images/phases', help='Directory where optimized phases will be saved.')
-p.add_argument('--kernel_path', type=str, default='/images/kernels', help='Directory where optimized phases will be saved.')
-p.add_argument('--data_path', type=str, default='/images/div_and_flickr', help='Directory for the dataset')
-p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='Directory for the dataset')
+p.add_argument('--root_path', type=str, default=f"{context_path}/phases", help='Directory where optimized phases will be saved.')
+p.add_argument('--kernel_path', type=str, default=f"{context_path}/kernels", help='Directory where optimized phases will be saved.')
+p.add_argument('--data_path', type=str, default=f"{context_path}/DIV2K_train_HR", help='Directory for the dataset')
+p.add_argument('--val_path', type=str, default=f"{context_path}/DIV2K_valid_HR", help='Directory for the dataset')
 p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
                help='Directory for the pretrained holonet/unet network')
 p.add_argument('--original',type=int, default=0,help="if use Original HoloNet, set 1")
@@ -52,7 +55,7 @@ p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
 p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
 p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
 p.add_argument('--num_split', type=int, default=100, help='number of distance points')
-p.add_argument('--plate_path', type=str, default='/images/zoneplates', help='Directory where optimized phases will be saved.')
+p.add_argument('--plate_path', type=str, default=f"{context_path}/zoneplates", help='Directory where optimized phases will be saved.')
 # Set hyper parameter
 p.add_argument('--lr', type=float,default=1e-4)
 p.add_argument('--num_epoc',type=int,default=10)
@@ -184,8 +187,8 @@ propagator = propagation_ASM  # Ideal model
 Augmented_Holonet=HoloZonePlateNet(  
         wavelength=wavelength,
         feature_size=feature_size[0],
-        initial_phase=InitialDoubleUnet(6, 16),
-        final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
+        initial_phase=InitialDoubleUnet(4, 16),
+        final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
         distace_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
 ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
@@ -356,7 +359,7 @@ for i in range(num_epochs):
 
                         # save trained model
                         if ik % 5000==0:
-                            torch.save(phase_generator.state_dict(),f'/images/checkall/{run_id}.pth')
+                            torch.save(phase_generator.state_dict(),f"{context_path}/checkall/{run_id}.pth")
 
                     break
 

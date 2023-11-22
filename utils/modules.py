@@ -149,19 +149,7 @@ class SGD(nn.Module):
         # Pre-compute propagataion kernel only once
         # print("req",preH.requires_grad)
 
-        file_path = '/code/for_paper/record.txt'
 
-        # 追加する文字列
-        string_to_add = f"{datetime.now()}\n{preH}\n"
-
-        # ファイルに文字列を追加する関数
-        def append_to_file(file_path, string_to_add):
-            # 'a'モードでファイルを開き、文字列を追加します
-            with open(file_path, 'a') as file:
-                file.write(string_to_add)
-
-        # 関数を呼び出してファイルに文字列を追加
-        append_to_file(file_path, string_to_add)
 
         # Run algorithm
         final_phase = stochastic_gradient_descent(init_phase, target_amp,num_iters, self.distancebox[ikk],
@@ -260,19 +248,6 @@ class DPAC(nn.Module):
         if target_phase is None:
             target_phase = torch.zeros_like(target_amp)
 
-        file_path = '/code/for_paper/record.txt'
-
-        # 追加する文字列
-        string_to_add = f"{datetime.now()}\{-self.distancebox[ikk]}\n{preH}\n"
-
-        # ファイルに文字列を追加する関数
-        def append_to_file(file_path, string_to_add):
-            # 'a'モードでファイルを開き、文字列を追加します
-            with open(file_path, 'a') as file:
-                file.write(string_to_add)
-
-        # 関数を呼び出してファイルに文字列を追加
-        append_to_file(file_path, string_to_add)    
 
 
         final_phase = double_phase_amplitude_coding(target_phase, target_amp, -self.distancebox[ikk],

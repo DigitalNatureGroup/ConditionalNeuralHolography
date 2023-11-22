@@ -45,6 +45,8 @@ from utils.modules import DPAC, SGD, GS
 from holonet import *
 from propagation_ASM import propagation_ASM
 
+context_path="./images"
+
 # Command line argument processing
 p = configargparse.ArgumentParser()
 p.add_argument('--channel', type=int, default=1, help='Red:0, green:1, blue:2')
@@ -59,11 +61,11 @@ p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 
 p.add_argument('--actual',type=int, default=0,help="if you want to do actual experiment mode set 1")
 p.add_argument('--phaseout',type=int, default=0,help="if you want to output CGH & Reconstructed Iamge, set 1")
 # p.add_argument('--num_iters', type=int, default=1, help='number of iteraion used in GS & SGD')
-p.add_argument('--root_path', type=str, default='/images/compare', help='Directory where optimized phases will be saved.')
-p.add_argument('--kernel_path', type=str, default='/images/kernels', help='Directory where optimized phases will be saved.')
-p.add_argument('--plate_path', type=str, default='/images/zoneplates', help='Directory where optimized phases will be saved.')
-p.add_argument('--val_path', type=str, default='/images/DIV2K_valid_HR', help='Directory for the dataset')
-p.add_argument('--generator_dir', type=str, default='/images/checkall',
+p.add_argument('--root_path', type=str, default=f'{context_path}/compare', help='Directory where optimized phases will be saved.')
+p.add_argument('--kernel_path', type=str, default=f'{context_path}/kernels', help='Directory where optimized phases will be saved.')
+p.add_argument('--plate_path', type=str, default=f'{context_path}/zoneplates', help='Directory where optimized phases will be saved.')
+p.add_argument('--val_path', type=str, default=f'{context_path}/DIV2K_valid_HR', help='Directory for the dataset')
+p.add_argument('--generator_dir', type=str, default=f'{context_path}/checkall',
                help='Directory for the pretrained holonet/unet network')
 
 opt = p.parse_args()
@@ -220,13 +222,14 @@ else:
 plateLoader=KernelLoader(plate_path)
 init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
 
+
 if gen_type==0:
     
     Augmented_Holonet=HoloZonePlateNet(  
             wavelength=wavelength,
             feature_size=feature_size[0],
-            initial_phase=InitialDoubleUnet(6, 16),
-            final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
+            initial_phase=InitialDoubleUnet(4, 16),
+            final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
             distace_box=distancebox,
             target_shape=[1,1,slm_res[0],slm_res[1]]
     ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
@@ -295,6 +298,8 @@ out_dis_array=[1]
 out_pic_array=[9]
 out_ik_array=[]
 
+
+
 for d in out_dis_array:
     for p in out_pic_array:
         add_ik=(p-1)*100+d
@@ -340,7 +345,7 @@ for l,num_iters in enumerate(num_iters_array):
                         with torch.no_grad():
                             slm_phase = phase_only_algorithm(target_amp,init_phase,k,preHb)
                     elif gen_type==2:
-                        slm_phase = phase_only_algorithm(target_amp,init_phase,k,num_iters,None)
+                        slm_phase = phase_only_algorithm(target_amp,init_phase,k,num_iters,preH)
                     elif gen_type==3:
                         with torch.no_grad():
                             slm_phase = phase_only_algorithm(target_amp,init_phase,k,num_iters,preH,preHb)
@@ -382,10 +387,10 @@ for l,num_iters in enumerate(num_iters_array):
                         
                         if PHASE_OUT:
                             phase_out_8bit = utils.phasemap_8bit(slm_phase.cpu().detach(), inverted=True)
-                            cv2.imwrite(os.path.join("./output_cgh", f'{run_id}_{ik}_cgh.png'), phase_out_8bit)
+                            cv2.imwrite(os.path.join("./images/output_cgh", f'{run_id}_{ik}_cgh.png'), phase_out_8bit)
                             recon_amp = recon_amp.squeeze().cpu().detach().numpy()
                             recon_srgb = utils.srgb_lin2gamma(np.clip(recon_amp**2, 0.0, 1.0))
-                            cv2.imwrite(os.path.join("./output_recon", f'{run_id}_{ik}.png'), (recon_srgb * np.iinfo(np.uint8).max).round().astype(np.uint8))
+                            cv2.imwrite(os.path.join("./images/output_recon", f'{run_id}_{ik}.png'), (recon_srgb * np.iinfo(np.uint8).max).round().astype(np.uint8))
                         
 
                         if ik % log_interval == 0:
