@@ -30,7 +30,7 @@ from propagation_model import ModelPropagate
 from holonet import *
 from propagation_ASM import propagation_ASM
 
-context_path="./images"
+context_path="/images"
 
 
 # Command line argument processing
@@ -40,6 +40,7 @@ p.add_argument('--channel', type=int, default=1, help='Red:0, green:1, blue:2')
 p.add_argument('--train', type=int, default=0, help='train:0, evaluate:1')
 p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, Augmented Conditional Unet:1')
 p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
+p.add_argument('--decrease', type=int, default=0, help='if decrease set 1')
 p.add_argument('--compare', type=int, default=1, help='if 0, this code will compare to DPAC and back propagation')
 p.add_argument('--root_path', type=str, default=f"{context_path}/phases", help='Directory where optimized phases will be saved.')
 p.add_argument('--kernel_path', type=str, default=f"{context_path}/kernels", help='Directory where optimized phases will be saved.')
@@ -69,18 +70,18 @@ DISTANCE_TO_IMAGE= opt.distance_to_image==0
 ORIGINAL=opt.original==1
 OUT_ALPHA=opt.out_alpha==1
 ACTURAL_MODE=opt.actual==1
+DECREASE=opt.decrease=1
 status_name="Train" if TRAIN else "Eavl"
-model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented Conditional Unet"
+model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented_Conditional_Unet"
 if ORIGINAL:
     model_type_name="Original"
-distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect Changed Phase"
+distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect_Changed_Phase"
 start_dis=opt.start_dis
 alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}"
 run_id=run_id+"_out" if OUT_ALPHA else run_id
-run_id=run_id+"actual" if ACTURAL_MODE else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
 print(f'   - optimizing phase with pitch {run_id} ... ')
@@ -99,13 +100,14 @@ print(feature_size)
 loss = nn.MSELoss().to(device)  # loss functions to use (try other loss functions!)
 s0 = 0.95  # initial scale
 
+run_id+=f"_{slm_res[0]}_{feature_size[0]}"
+run_id=run_id+"_decrease" if DECREASE else run_id
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
-kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}')
-plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}')
+kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
+plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
 kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
 plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
-kernel_path = kernel_path+"_actual" if ACTURAL_MODE else kernel_path
-plate_path=plate_path+"_actual" if ACTURAL_MODE else plate_path
+
 
 
 # Tensorboard writer
@@ -187,18 +189,36 @@ propagator = propagation_ASM  # Ideal model
 Augmented_Holonet=HoloZonePlateNet(  
         wavelength=wavelength,
         feature_size=feature_size[0],
-        initial_phase=InitialDoubleUnet(4, 16),
-        final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
+        initial_phase=InitialDoubleUnet(6, 16),
+        final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
         distace_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
 ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
         wavelength=wavelength,
         feature_size=feature_size[0],
         initial_phase=InitialDoubleUnet(6, 16),
-        final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
+        final_phase_only=FinalPhaseOnlyUnet(8,32, num_in=2),
         distance_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
 )
+
+if DECREASE:
+    Augmented_Holonet=HoloZonePlateNet(  
+        wavelength=wavelength,
+        feature_size=feature_size[0],
+        initial_phase=InitialDoubleUnet(4, 16),
+        final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
+        distace_box=distancebox,
+        target_shape=[1,1,slm_res[0],slm_res[1]]
+    ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
+            wavelength=wavelength,
+            feature_size=feature_size[0],
+            initial_phase=InitialDoubleUnet(4, 16),
+            final_phase_only=FinalPhaseOnlyUnet(6,16, num_in=2),
+            distance_box=distancebox,
+            target_shape=[1,1,slm_res[0],slm_res[1]]
+    )
+
 
 Augmented_Conditional_Unet=VUnet_Aug_single(  
         target_shpae=[1,1,slm_res[0],slm_res[1]],

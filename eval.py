@@ -45,7 +45,7 @@ from utils.modules import DPAC, SGD, GS
 from holonet import *
 from propagation_ASM import propagation_ASM
 
-context_path="./images"
+context_path="/images"
 
 # Command line argument processing
 p = configargparse.ArgumentParser()
@@ -53,6 +53,7 @@ p.add_argument('--channel', type=int, default=1, help='Red:0, green:1, blue:2')
 p.add_argument('--gen_type', type=int, default=0, help='CNN:0,DPAC:1,SGD:2,GS:3')
 p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, Augmented Conditional Unet:1')
 p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
+p.add_argument('--decrease', type=int, default=0, help='if decrease set 1')
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
 p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
 p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
@@ -79,6 +80,7 @@ DISTANCE_TO_IMAGE= opt.distance_to_image==0
 OUT_ALPHA=opt.out_alpha==1
 ACTURAL_MODE=opt.actual==1
 PHASE_OUT=opt.phaseout==1
+DECREASE=opt.decrease=1
 status_name="Eval"
 
 num_splits=opt.num_split
@@ -92,7 +94,6 @@ num_splits=opt.num_split
 end_dis=opt.end_dis
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}" if (gen_type==0 or gen_type==4) else gen_string
 run_id=run_id+"_out" if OUT_ALPHA else run_id
-run_id=run_id+"actual" if ACTURAL_MODE else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
 print("getntype",gen_type)
@@ -114,12 +115,13 @@ print("count",torch.cuda.device_count())
 s0 = 1.0  # initial scaled
 
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
-kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}')
-plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}')
+run_id+=f"_{slm_res[0]}_{feature_size[0]}"
+run_id=run_id+"_decrease" if DECREASE else run_id
+kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
+plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
 kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
 plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
-kernel_path = kernel_path+"_actual" if ACTURAL_MODE else kernel_path
-plate_path=plate_path+"_actual" if ACTURAL_MODE else plate_path
+
 
 # Tensorboard writer
 summaries_dir = os.path.join(root_path, 'summaries')
@@ -136,8 +138,11 @@ def delete_file(path):
     else:
         print(f"No such file: {path}")
 
-dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{ACTURAL_MODE}.csv'
-dt_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{ACTURAL_MODE}.txt'
+dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}.csv'
+dt_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}.txt'
+if DECREASE:
+    dd_path+="_decrease"
+    dt_path+="_decrease"
 delete_file(dd_path)
 delete_file(dt_path)
 
@@ -226,21 +231,38 @@ init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
 if gen_type==0:
     
     Augmented_Holonet=HoloZonePlateNet(  
+        wavelength=wavelength,
+        feature_size=feature_size[0],
+        initial_phase=InitialDoubleUnet(6, 16),
+        final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
+        distace_box=distancebox,
+        target_shape=[1,1,slm_res[0],slm_res[1]]
+    ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
+            wavelength=wavelength,
+            feature_size=feature_size[0],
+            initial_phase=InitialDoubleUnet(6, 16),
+            final_phase_only=FinalPhaseOnlyUnet(8,32, num_in=2),
+            distance_box=distancebox,
+            target_shape=[1,1,slm_res[0],slm_res[1]]
+    )
+
+    if DECREASE:
+        Augmented_Holonet=HoloZonePlateNet(  
             wavelength=wavelength,
             feature_size=feature_size[0],
             initial_phase=InitialDoubleUnet(4, 16),
             final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
             distace_box=distancebox,
             target_shape=[1,1,slm_res[0],slm_res[1]]
-    ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
-            wavelength=wavelength,
-            feature_size=feature_size[0],
-            initial_phase=InitialDoubleUnet(6, 16),
-            final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
-            distance_box=distancebox,
-            target_shape=[1,1,slm_res[0],slm_res[1]]
+        ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
+                wavelength=wavelength,
+                feature_size=feature_size[0],
+                initial_phase=InitialDoubleUnet(4, 16),
+                final_phase_only=FinalPhaseOnlyUnet(6,16, num_in=2),
+                distance_box=distancebox,
+                target_shape=[1,1,slm_res[0],slm_res[1]]
+        )
 
-    )
 
     Augmented_Conditional_Unet=VUnet_Aug_single(
         target_shpae=[1,1,slm_res[0],slm_res[1]],
