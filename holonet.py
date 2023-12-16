@@ -216,6 +216,7 @@ class HoloZonePlateNet(nn.Module):
         time_counter=time.perf_counter()
 
         # implement the basic propagation to the SLM plane
+       
         slm_naive = self.prop(target_complex_diff, self.feature_size,
                               self.wavelength,-self.distance_box[ikk],
                               precomped_H=preHb,

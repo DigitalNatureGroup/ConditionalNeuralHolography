@@ -29,6 +29,7 @@ from utils.kernel_loader import KernelLoader
 from propagation_model import ModelPropagate
 from holonet import *
 from propagation_ASM import propagation_ASM
+import time
 
 context_path="/images"
 
@@ -70,7 +71,7 @@ DISTANCE_TO_IMAGE= opt.distance_to_image==0
 ORIGINAL=opt.original==1
 OUT_ALPHA=opt.out_alpha==1
 ACTURAL_MODE=opt.actual==1
-DECREASE=opt.decrease=1
+DECREASE=opt.decrease==1
 status_name="Train" if TRAIN else "Eavl"
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented_Conditional_Unet"
 if ORIGINAL:
@@ -89,8 +90,8 @@ print(f'   - optimizing phase with pitch {run_id} ... ')
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
-slm_res = (1024, 2048)  if not ACTURAL_MODE else (2160,3840)
+feature_size = (3.74 * um, 3.74 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
+slm_res = (1024, 2048)  if not ACTURAL_MODE else (2144,3840)
 image_res=roi_res=slm_res
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
 device = torch.device('cuda')  # The gpu you are using
@@ -148,6 +149,7 @@ else:
             print(c,temp_H)
             del temp_H
             print(f"Calculating Kernel {c+1}/{len(distancebox)}")
+
 if(os.path.isdir(f'{kernel_path}_back')):
     pass
 else:
@@ -203,18 +205,19 @@ Augmented_Holonet=HoloZonePlateNet(
 )
 
 if DECREASE:
+    print("here!!!!")
     Augmented_Holonet=HoloZonePlateNet(  
         wavelength=wavelength,
         feature_size=feature_size[0],
-        initial_phase=InitialDoubleUnet(4, 16),
-        final_phase_only=FinalPhaseOnlyUnet(6, 16, num_in=2),
+        initial_phase=InitialDoubleUnet(5, 16),
+        final_phase_only=FinalPhaseOnlyUnet(5, 16, num_in=2),
         distace_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
     ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
             wavelength=wavelength,
             feature_size=feature_size[0],
-            initial_phase=InitialDoubleUnet(4, 16),
-            final_phase_only=FinalPhaseOnlyUnet(6,16, num_in=2),
+            initial_phase=InitialDoubleUnet(5, 16),
+            final_phase_only=FinalPhaseOnlyUnet(5,16, num_in=2),
             distance_box=distancebox,
             target_shape=[1,1,slm_res[0],slm_res[1]]
     )
@@ -230,10 +233,13 @@ Augmented_Conditional_Unet=VUnet_Aug_single(
         distance_box=distancebox)
 
 phase_generator = Augmented_Holonet if MODEL_TYPE else Augmented_Conditional_Unet
+
+
 if ORIGINAL:
     phase_generator = HoloNet(
         distance=start,
         wavelength=wavelength,
+        feature_size=feature_size[0],
         initial_phase=InitialPhaseUnet(4, 16),
         final_phase_only=FinalPhaseOnlyUnet(4, 16, num_in=2))
 phase_generator.to(device)
@@ -276,15 +282,23 @@ for i in range(num_epochs):
     for k, target in enumerate(image_loader):
         ik+=1
         optimizer.zero_grad()
+        
         # Get target image
         target_amp, target_res,target_filename = target
         dis_k=0 if ORIGINAL else random.randrange(len(distancebox))
         target_amp = target_amp.to(device)
         # Load precomputed kernel
         print("dis_k",dis_k)
+        
+        # ###ここを修正中
+        # preH=None
+        # preHb=None
+        
         preH=kLoader[dis_k].to(device)
         preHb=kbLoder[dis_k].to(device)
-        plate=plateLoader[dis_k].to(device)       
+        plate=plateLoader[dis_k].to(device)  
+        
+      
 
         # Forward model
         if ORIGINAL:
@@ -348,9 +362,15 @@ for i in range(num_epochs):
                         val_amp, val_res,_ = val_target 
                         val_amp=val_amp.to(device)
                         val_k=0 if ORIGINAL else random.randrange(len(distancebox))
+                        ### ここを修正
                         preH=kLoader[val_k].to(device)
                         preHb=kbLoder[val_k].to(device)
+                        
+
                         val_plate=plateLoader[val_k].to(device)
+                        
+             
+                        
                         if ORIGINAL:
                             _,val_phase=phase_generator(val_amp)
                         else:

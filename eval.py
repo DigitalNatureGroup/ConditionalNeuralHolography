@@ -61,6 +61,7 @@ p.add_argument('--num_split', type=int, default=100, help='number of distance po
 p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 4.2, set 1")
 p.add_argument('--actual',type=int, default=0,help="if you want to do actual experiment mode set 1")
 p.add_argument('--phaseout',type=int, default=0,help="if you want to output CGH & Reconstructed Iamge, set 1")
+p.add_argument('--original',type=int, default=0,help="if use Original HoloNet, set 1")
 # p.add_argument('--num_iters', type=int, default=1, help='number of iteraion used in GS & SGD')
 p.add_argument('--root_path', type=str, default=f'{context_path}/compare', help='Directory where optimized phases will be saved.')
 p.add_argument('--kernel_path', type=str, default=f'{context_path}/kernels', help='Directory where optimized phases will be saved.')
@@ -80,12 +81,15 @@ DISTANCE_TO_IMAGE= opt.distance_to_image==0
 OUT_ALPHA=opt.out_alpha==1
 ACTURAL_MODE=opt.actual==1
 PHASE_OUT=opt.phaseout==1
-DECREASE=opt.decrease=1
+DECREASE=opt.decrease==1
+ORIGINAL=opt.original==1
 status_name="Eval"
 
 num_splits=opt.num_split
 
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented_Conditional_Unet"
+if ORIGINAL:
+    model_type_name="Original"
 distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect_Changed_Phase"
 gen_string=["CNN","DPAC","SGD","GS","Old"][gen_type]
 start_dis=opt.start_dis
@@ -103,8 +107,8 @@ print(f'   - eavaluating phase with {run_id} ... ')
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 prop_dist = (20 * cm, 20 * cm, 20 * cm)[channel]  # propagation distance from SLM plane to target plane
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) # SLM pitch
-slm_res = (1024, 2048) if not ACTURAL_MODE else (2160,3840) # resolution of SLM
+feature_size = (3.74 * um, 3.74* um) if not ACTURAL_MODE else (3.74*um, 3.74*um) # SLM pitch
+slm_res = (1024, 2048) if not ACTURAL_MODE else (2144,3840) # resolution of SLM
 image_res=slm_res
 roi_res=(880,1600) if not ACTURAL_MODE else (2160,3840)
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
@@ -171,6 +175,11 @@ for a in phase_box:
     step = (end - start) / num_splits
     distancebox += [start + step * i for i in range(num_splits + 1)]
 distancebox=sorted(distancebox)
+
+if ORIGINAL:
+    distancebox=[start]
+    num_splits=1
+
 
 if(os.path.isdir(kernel_path)):
     pass
@@ -275,6 +284,14 @@ if gen_type==0:
         distance_box=distancebox)
 
     phase_only_algorithm = Augmented_Holonet if MODEL_TYPE else Augmented_Conditional_Unet
+    if ORIGINAL:
+        phase_only_algorithm = HoloNet(
+            distance=start,
+            wavelength=wavelength,
+            feature_size=feature_size[0],
+            initial_phase=InitialPhaseUnet(4, 16),
+            final_phase_only=FinalPhaseOnlyUnet(4, 16, num_in=2))
+        
     weight_path=f"{opt.generator_dir}/{run_id.replace('Eval','Train')}.pth"
     phase_only_algorithm.load_state_dict(torch.load(weight_path))
     phase_only_algorithm.to(device)
@@ -309,7 +326,7 @@ if(gen_type==2 or gen_type==3):
 else :
     num_iters_array=[1]
 
-log_interval = len(distancebox)-1  # Adjust this value to your needs
+log_interval = len(distancebox)-1 if not ORIGINAL else 1# Adjust this value to your needs
 log_records = []
 ik_records=[]
 dis_records=[]
@@ -330,16 +347,14 @@ for d in out_dis_array:
 
 for l,num_iters in enumerate(num_iters_array):
     ik=0
-
     for target in (val_loader):
         ###ここを臨時的に書き換える
         ## 本来は range(len(distancebox)-1)
         dis_length=len(distancebox)-1 if not OUT_ALPHA else 100 
-        for k in range(len(distancebox)-1):
-           
+        dis_loop=range(len(distancebox)-1) if not ORIGINAL else range(1)
+        for k in dis_loop:
             if num_splits<100 or k%(num_splits//100)==0 :
                 ik+=1
-                
                 #Phaseoutモードでは、out_ik_arrayのみを出力する。
                 if PHASE_OUT and ik not in out_ik_array:
                     pass
@@ -362,7 +377,10 @@ for l,num_iters in enumerate(num_iters_array):
                 
                     if gen_type==0:
                         with torch.no_grad():
-                            slm_phase = phase_only_algorithm(target_amp,plate,k,preHb)
+                            if ORIGINAL:
+                                _,slm_phase=phase_only_algorithm(target_amp)
+                            else:
+                                slm_phase = phase_only_algorithm(target_amp,plate,k,preHb)
                     elif gen_type==1:
                         with torch.no_grad():
                             slm_phase = phase_only_algorithm(target_amp,init_phase,k,preHb)
@@ -416,20 +434,22 @@ for l,num_iters in enumerate(num_iters_array):
                         
 
                         if ik % log_interval == 0:
+                            csv_path=f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}'
+                            csv_path=csv_path+"_decrease.csv" if DECREASE else csv_path+".csv"
+                            
                             if(first_log):
-                                with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv', 'a', newline='') as file:
+                                with open(csv_path, 'a', newline='') as file:
                                     writer_csv = csv.writer(file)
                                     writer_csv.writerows([dis_records])
                                     print(f'Saved log at iteration: {ik}')
                                     first_log=False
         
-                            with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.csv', 'a', newline='') as file:
+                            with open(csv_path, 'a', newline='') as file:
                                 writer_csv = csv.writer(file)
                                 writer_csv.writerows([log_records])
                                 print(f'Saved log at iteration: {ik}')
         
                             
-
                             with open(f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}.txt', 'a') as file:
                                 for a,log in enumerate(log_records):
                                     file.write(f"{ik_records[a]}  {log}  distance:{dis_records[a]}  image:{name_records[a]}\n")
@@ -438,3 +458,5 @@ for l,num_iters in enumerate(num_iters_array):
                                 dis_records=[]
                                 name_records=[]
                                 print(f'Saved log txt at iteration: {ik}')
+
+
