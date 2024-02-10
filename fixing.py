@@ -22,9 +22,9 @@ u_in=torch.zeros((1,1,res[0],res[1]),dtype=torch.float32)
 
 def check_kernel():
     ## Kernelの精度を確認する
-    kernel_a=KernelLoader(f"/images/kernels/0.2_200000_100_1024_3.74e-06")
+    kernel_a=KernelLoader(f"/images/kernels/0.2_200000_100_1024_3.74e-06_back")
 
-    kernel_c=propagation_ASM(u_in,(3.74*1e-6,3.74*1e-6),520*1e-9,0.20000104000000002,return_H=True,precomped_H=None)
+    kernel_c=propagation_ASM(u_in,(3.74*1e-6,3.74*1e-6),520*1e-9,-0.20000104000000002,return_H=True,precomped_H=None)
     torch.set_printoptions(threshold=500)
 
     print("kernelA \n",kernel_a[0])
@@ -56,5 +56,27 @@ def check_plate():
     print(plate_c)
     print("等しいか",torch.equal(plate_a,plate_c))
     
-check_plate()
+
+def check_sampling_theorem(dx, dy, wavelength, z):
+    # 許容される最大サンプリング間隔を計算
+    max_sampling_interval_x = wavelength * z / (dx * 2)
+    max_sampling_interval_y = wavelength * z / (dy * 2)
+
+    # サンプリング間隔のチェック
+    if dx > max_sampling_interval_x or dy > max_sampling_interval_y:
+        return "サンプリング間隔が大きすぎます。標本化定理に違反している可能性があります。"
+
+    # 伝搬距離のチェック（任意の追加条件があればここに記述）
+    # ...
+
+    return "サンプリング間隔と伝搬距離は標本化定理を満たしています。"
+
+# 使用例
+# dx = 3.74*1e-6  # 例: 0.1 mm
+# dy = 3.74*1e-6  # 例: 0.1 mm
+# wavelength = 520*1e-9  # 例: 500 nm
+# z = 0.2 # 例: 10 cm
+
+check_kernel()
+
     

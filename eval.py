@@ -55,7 +55,7 @@ p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, A
 p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
 p.add_argument('--decrease', type=int, default=0, help='if decrease set 1')
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
-p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
+p.add_argument('--alpha', type=float, default=0.5, help='phase_shift')
 p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
 p.add_argument('--num_split', type=int, default=100, help='number of distance points')
 p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 4.2, set 1")
@@ -96,7 +96,7 @@ start_dis=opt.start_dis
 alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
-run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}" if (gen_type==0 or gen_type==4) else gen_string
+run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}_alpha{alpha}" if (gen_type==0 or gen_type==4) else gen_string
 run_id=run_id+"_out" if OUT_ALPHA else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
@@ -116,13 +116,13 @@ device = torch.device('cuda')  # The gpu you are using
 print("device",device)
 print("count",torch.cuda.device_count())
 
-s0 = 1.0  # initial scaled
+s0 = 0.9  # initial scaled
 
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
 run_id+=f"_{slm_res[0]}_{feature_size[0]}"
 run_id=run_id+"_decrease" if DECREASE else run_id
-kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
-plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
+kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}')
+plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}')
 kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
 plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
 
@@ -171,6 +171,11 @@ distancebox=[]
 for a in phase_box:
     start = start_dis+a
     end = start_dis+a+end_dis*wavelength
+    
+    if alpha==100:
+        start=0.2
+        end=0.3
+        print("alpha 100mode")
 
     step = (end - start) / num_splits
     distancebox += [start + step * i for i in range(num_splits + 1)]

@@ -54,7 +54,7 @@ p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 
 p.add_argument('--actual',type=int, default=0,help="if you actual experiment mode set 1")
 # Set propagation distance array
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
-p.add_argument('--alpha', type=float, default=2.0, help='phase_shift')
+p.add_argument('--alpha', type=float, default=0.5, help='phase_shift')
 p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
 p.add_argument('--num_split', type=int, default=100, help='number of distance points')
 p.add_argument('--plate_path', type=str, default=f"{context_path}/zoneplates", help='Directory where optimized phases will be saved.')
@@ -81,7 +81,7 @@ start_dis=opt.start_dis
 alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
-run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}"
+run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}_alpha{alpha}"
 run_id=run_id+"_out" if OUT_ALPHA else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
@@ -90,7 +90,7 @@ print(f'   - optimizing phase with pitch {run_id} ... ')
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (3.74 * um, 3.74 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
+feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
 slm_res = (1024, 2048)  if not ACTURAL_MODE else (2144,3840)
 image_res=roi_res=slm_res
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
@@ -127,6 +127,11 @@ distancebox=[]
 for a in phase_box:
     start = start_dis+a
     end = start_dis+a+end_dis*wavelength
+    
+    if alpha==100:
+        start=0.2
+        end=0.3
+        print("alpha 100mode")
 
     step = (end - start) / num_splits
     distancebox += [start + step * i for i in range(num_splits + 1)]
@@ -161,9 +166,9 @@ else:
             del temp_H
             print(f"Calculating Kernel Back {c+1}/{len(distancebox)}")
 
-init_phase = (-0.5 + 1.0 * torch.rand(1, 1, *slm_res)).to(device)
 kLoader=KernelLoader(kernel_path)
 kbLoder=KernelLoader(f'{kernel_path}_back')
+
 
 if(os.path.isdir(plate_path)):
     pass
@@ -285,19 +290,34 @@ for i in range(num_epochs):
         
         # Get target image
         target_amp, target_res,target_filename = target
-        dis_k=0 if ORIGINAL else random.randrange(len(distancebox))
+        dis_k=0 if ORIGINAL else random.randrange(len(distancebox)-1)
         target_amp = target_amp.to(device)
         # Load precomputed kernel
         print("dis_k",dis_k)
         
         # ###ここを修正中
-        # preH=None
-        # preHb=None
+        preH=None
+        preHb=None
         
-        preH=kLoader[dis_k].to(device)
-        preHb=kbLoder[dis_k].to(device)
-        plate=plateLoader[dis_k].to(device)  
+      
         
+        with torch.no_grad():
+            point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
+            point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
+            zone_comp= propagation_ASM(point_light, feature_size,
+                                wavelength, -distancebox[dis_k],
+                                precomped_H=None,
+                                linear_conv=True)
+            zone_plate=torch.angle(zone_comp)
+            zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))        
+        plate=zone_plate
+
+
+        # preH=kLoader[dis_k].to(device)
+        # preHb=kbLoder[dis_k].to(device)
+        # plate=plateLoader[dis_k].to(device)  
+        
+
       
 
         # Forward model
@@ -361,15 +381,29 @@ for i in range(num_epochs):
                         phase_generator.eval()
                         val_amp, val_res,_ = val_target 
                         val_amp=val_amp.to(device)
-                        val_k=0 if ORIGINAL else random.randrange(len(distancebox))
+                    
+                        val_k=0 if ORIGINAL else random.randrange(len(distancebox)-1)
                         ### ここを修正
-                        preH=kLoader[val_k].to(device)
-                        preHb=kbLoder[val_k].to(device)
+                        # preH=kLoader[val_k].to(device)
+                        # preHb=kbLoder[val_k].to(device)
                         
 
-                        val_plate=plateLoader[val_k].to(device)
+                        # val_plate=plateLoader[val_k].to(device)
                         
+                        preH=None
+                        preHb=None
+                        
+                        point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
+                        point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
+                        zone_comp= propagation_ASM(point_light, feature_size,
+                                            wavelength, -distancebox[val_k],
+                                            precomped_H=None,
+                                            linear_conv=True)
+                        zone_plate=torch.angle(zone_comp)
+                        zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))      
              
+                        val_plate=zone_plate
+                        
                         
                         if ORIGINAL:
                             _,val_phase=phase_generator(val_amp)
