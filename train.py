@@ -40,7 +40,7 @@ p = configargparse.ArgumentParser()
 p.add_argument('--channel', type=int, default=1, help='Red:0, green:1, blue:2')
 p.add_argument('--train', type=int, default=0, help='train:0, evaluate:1')
 p.add_argument('--model_type', type=int, default=0, help='Augmented Holonet:0, Augmented Conditional Unet:1')
-p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1')
+p.add_argument('--distance_to_image', type=int, default=0, help='Zone Plate:0, Reflect Changed Phase:1, RGBD:2')
 p.add_argument('--decrease', type=int, default=0, help='if decrease set 1')
 p.add_argument('--compare', type=int, default=1, help='if 0, this code will compare to DPAC and back propagation')
 p.add_argument('--root_path', type=str, default=f"{context_path}/phases", help='Directory where optimized phases will be saved.')
@@ -52,6 +52,7 @@ p.add_argument('--generator_dir', type=str, default='./pretrained_networks',
 p.add_argument('--original',type=int, default=0,help="if use Original HoloNet, set 1")
 p.add_argument('--out_alpha',type=int, default=0,help="if you want to check sec 4.2, set 1")
 p.add_argument('--actual',type=int, default=0,help="if you actual experiment mode set 1")
+p.add_argument('--divide',type=int, default=0,help="if you divide set 1")
 # Set propagation distance array
 p.add_argument('--start_dis', type=float, default=0.2, help='z_0[m]')
 p.add_argument('--alpha', type=float, default=0.5, help='phase_shift')
@@ -67,22 +68,25 @@ p.add_argument('--num_epoc',type=int,default=10)
 opt = p.parse_args()
 TRAIN= opt.train==0
 MODEL_TYPE=opt.model_type==0
-DISTANCE_TO_IMAGE= opt.distance_to_image==0 
+# DISTANCE_TO_IMAGE= opt.distance_to_image==0 
+# DISTANCE_TO_IMAGE=[][opt.distance_to_image]
 ORIGINAL=opt.original==1
 OUT_ALPHA=opt.out_alpha==1
 ACTURAL_MODE=opt.actual==1
 DECREASE=opt.decrease==1
+DIVIDE=opt.divide==1
 status_name="Train" if TRAIN else "Eavl"
 model_type_name="Augmented_Holonet" if MODEL_TYPE else "Augmented_Conditional_Unet"
 if ORIGINAL:
     model_type_name="Original"
-distance_to_image_name="Zone_Plate" if DISTANCE_TO_IMAGE else "Reflect_Changed_Phase"
+distance_to_image_name=["Zone_Plate","Reflect_Changed_Phase","RGBD"][opt.distance_to_image]
 start_dis=opt.start_dis
 alpha=opt.alpha
 num_splits=opt.num_split
 end_dis=opt.end_dis
 run_id = f"{status_name}_{model_type_name}_{distance_to_image_name}_{start_dis}_{end_dis}_{num_splits}_alpha{alpha}"
 run_id=run_id+"_out" if OUT_ALPHA else run_id
+run_id=run_id+"_divide" if DIVIDE else run_id
 channel = opt.channel  # Red:0 / Green:1 / Blue:2
 chan_str = ('red', 'green', 'blue')[channel]
 print(f'   - optimizing phase with pitch {run_id} ... ')
@@ -200,7 +204,7 @@ Augmented_Holonet=HoloZonePlateNet(
         final_phase_only=FinalPhaseOnlyUnet(8, 32, num_in=2),
         distace_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
-) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
+) if opt.distance_to_image!=1 else HoloZonePlateNet2ch(
         wavelength=wavelength,
         feature_size=feature_size[0],
         initial_phase=InitialDoubleUnet(6, 16),
@@ -218,7 +222,7 @@ if DECREASE:
         final_phase_only=FinalPhaseOnlyUnet(5, 16, num_in=2),
         distace_box=distancebox,
         target_shape=[1,1,slm_res[0],slm_res[1]]
-    ) if DISTANCE_TO_IMAGE else HoloZonePlateNet2ch(
+    ) if opt.distance_to_image!=1 else HoloZonePlateNet2ch(
             wavelength=wavelength,
             feature_size=feature_size[0],
             initial_phase=InitialDoubleUnet(5, 16),
@@ -232,7 +236,7 @@ Augmented_Conditional_Unet=VUnet_Aug_single(
         target_shpae=[1,1,slm_res[0],slm_res[1]],
         feature_size=feature_size,
         wavelength=wavelength,
-        distance_box=distancebox,) if DISTANCE_TO_IMAGE else VUnet_Aug(target_shpae=[1,1,slm_res[0],slm_res[1]],
+        distance_box=distancebox,) if opt.distance_to_image!=1 else VUnet_Aug(target_shpae=[1,1,slm_res[0],slm_res[1]],
         feature_size=feature_size,
         wavelength=wavelength,
         distance_box=distancebox)
@@ -300,17 +304,23 @@ for i in range(num_epochs):
         preHb=None
         
       
-        
-        with torch.no_grad():
-            point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
-            point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
-            zone_comp= propagation_ASM(point_light, feature_size,
-                                wavelength, -distancebox[dis_k],
-                                precomped_H=None,
-                                linear_conv=True)
-            zone_plate=torch.angle(zone_comp)
-            zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))        
-        plate=zone_plate
+        if opt.distance_to_image==0:
+            with torch.no_grad():
+                point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
+                point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
+                zone_comp= propagation_ASM(point_light, feature_size,
+                                    wavelength, -distancebox[dis_k],
+                                    precomped_H=None,
+                                    linear_conv=True)
+                zone_plate=torch.angle(zone_comp)
+                zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))        
+            plate=zone_plate
+        elif opt.distance_to_image==2:
+            with torch.no_grad():
+                plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[dis_k]-0.2)/0.1,dtype=torch.float32)
+                plate=plate.to(device)
+        else:
+            plate=None
 
 
         # preH=kLoader[dis_k].to(device)
@@ -393,14 +403,18 @@ for i in range(num_epochs):
                         preH=None
                         preHb=None
                         
-                        point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
-                        point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
-                        zone_comp= propagation_ASM(point_light, feature_size,
-                                            wavelength, -distancebox[val_k],
-                                            precomped_H=None,
-                                            linear_conv=True)
-                        zone_plate=torch.angle(zone_comp)
-                        zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))      
+                        if opt.distance_to_image==0:
+                            point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
+                            point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
+                            zone_comp= propagation_ASM(point_light, feature_size,
+                                                wavelength, -distancebox[val_k],
+                                                precomped_H=None,
+                                                linear_conv=True)
+                            zone_plate=torch.angle(zone_comp)
+                            zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))    
+                        else:
+                            zone_plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[val_k]-0.2)/0.1,dtype=torch.float32)
+                            zone_plate=zone_plate.to(device)
              
                         val_plate=zone_plate
                         
