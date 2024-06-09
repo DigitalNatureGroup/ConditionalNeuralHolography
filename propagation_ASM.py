@@ -44,8 +44,7 @@ def propagation_ASM(u_in, feature_size, wavelength, z, linear_conv=True,
     tensor of size (num_images, 1, height, width, 2)
     """
     
-    print(u_in.size(),z,wavelength,feature_size)
-
+    
     if linear_conv:
         # preprocess with padding for linear conv.
         input_resolution = u_in.size()[-2:]
@@ -65,7 +64,7 @@ def propagation_ASM(u_in, feature_size, wavelength, z, linear_conv=True,
 
         # sampling inteval size
         dy, dx = feature_size
-        print("dy,dx",dy,dx)
+        print("dy,dx,lambda",dy,dx,wavelength)
 
         # size of the field
         y, x = (dy * float(num_y), dx * float(num_x))

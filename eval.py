@@ -84,6 +84,8 @@ PHASE_OUT=opt.phaseout==1
 DECREASE=opt.decrease==1
 ORIGINAL=opt.original==1
 status_name="Eval"
+INVERTED=True
+print("inverted",INVERTED)
 
 num_splits=opt.num_split
 
@@ -106,23 +108,23 @@ print(f'   - eavaluating phase with {run_id} ... ')
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
 prop_dist = (20 * cm, 20 * cm, 20 * cm)[channel]  # propagation distance from SLM plane to target plane
-wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
+wavelength = (638 * nm, 517.9 * nm, 450 * nm)[channel]  # wavelength of each color
 feature_size = (3.74 * um, 3.74* um) if not ACTURAL_MODE else (3.74*um, 3.74*um) # SLM pitch
 slm_res = (1024, 2048) if not ACTURAL_MODE else (2144,3840) # resolution of SLM
 image_res=slm_res
-roi_res=(880,1600) if not ACTURAL_MODE else (2160,3840)
+roi_res=(1024,2048) if not ACTURAL_MODE else (2160,3840)
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
 device = torch.device('cuda')  # The gpu you are using
 print("device",device)
 print("count",torch.cuda.device_count())
 
-s0 = 0.9  # initial scaled
+s0 = 0.95  # initial scaled
 
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
-run_id+=f"_{slm_res[0]}_{feature_size[0]}"
+run_id+=f"_{slm_res[0]}_{feature_size[0]}_{wavelength}"
 run_id=run_id+"_decrease" if DECREASE else run_id
-kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}')
-plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}')
+kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}_{wavelength}')
+plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}_{wavelength}')
 kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
 plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
 
@@ -142,8 +144,8 @@ def delete_file(path):
     else:
         print(f"No such file: {path}")
 
-dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}.csv'
-dt_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}.txt'
+dd_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}_{wavelength}.csv'
+dt_path = f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}_{wavelength}.txt'
 if DECREASE:
     dd_path+="_decrease"
     dt_path+="_decrease"
@@ -318,6 +320,7 @@ elif gen_type==4:
 
 elif gen_type==1:
     phase_only_algorithm = DPAC(distancebox,kLoader,wavelength, feature_size, "ASM", propagator, device)
+    print("dpac_params",prop_dist,wavelength,feature_size,opt.prop_model,propagator,device)
 elif gen_type==2:
     
     phase_only_algorithm = SGD(distancebox,kLoader,wavelength, feature_size,roi_res, root_path,
@@ -327,7 +330,7 @@ elif gen_type==3:
 
 
 if(gen_type==2 or gen_type==3):
-    num_iters_array=[1000]
+    num_iters_array=[3000]
 else :
     num_iters_array=[1]
 
@@ -338,8 +341,9 @@ dis_records=[]
 name_records=[]
 first_log=True
 
-out_dis_array=[1]
-out_pic_array=[9]
+# out_dis_array=[1]
+out_dis_array=[1,50,100]
+out_pic_array=[9,100]
 out_ik_array=[]
 
 
@@ -385,7 +389,19 @@ for l,num_iters in enumerate(num_iters_array):
                             if ORIGINAL:
                                 _,slm_phase=phase_only_algorithm(target_amp)
                             else:
-                                slm_phase = phase_only_algorithm(target_amp,plate,k,preHb)
+                                # slm_phase = phase_only_algorithm(target_amp,plate,k,preHb)
+                                if opt.distance_to_image==0:
+                                    point_light=torch.zeros([1,1,slm_res[0],slm_res[1]],dtype=torch.float32).to(device)
+                                    point_light[0, 0, slm_res[0]//2-1:slm_res[0]//2+1, slm_res[1]//2-1:slm_res[1]//2+1] = 1.0
+                                    zone_comp= propagation_ASM(point_light, feature_size,
+                                                        wavelength, -distancebox[k],
+                                                        precomped_H=None,
+                                                        linear_conv=True)
+                                    zone_plate=torch.angle(zone_comp)
+                                    zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))
+                                    plate=zone_plate    
+                                
+                                slm_phase = phase_only_algorithm(target_amp,plate,k,None)
                     elif gen_type==1:
                         with torch.no_grad():
                             slm_phase = phase_only_algorithm(target_amp,init_phase,k,preHb)
@@ -431,16 +447,30 @@ for l,num_iters in enumerate(num_iters_array):
                         
                         
                         if PHASE_OUT:
-                            phase_out_8bit = utils.phasemap_8bit(slm_phase.cpu().detach(), inverted=True)
-                            cv2.imwrite(os.path.join("./images/output_cgh", f'{run_id}_{ik}_cgh.png'), phase_out_8bit)
+                            print("here")
+                            phase_out_8bit = utils.phasemap_8bit(slm_phase.cpu().detach(), inverted=INVERTED)
+                            output_path= f'{run_id}/{gen_string}_{ik}.png' if INVERTED else f'{run_id}/rv_{gen_string}_{ik}.png'
+                            
+                            if(not os.path.isdir(os.path.join("/images/output_cgh",output_path.split("/")[0]))):
+                                os.mkdir(os.path.join("/images/output_cgh",output_path.split("/")[0]))
+                                os.mkdir(os.path.join("/images/output_recon",output_path.split("/")[0])) 
+                                os.mkdir(os.path.join("/images/target_image",output_path.split("/")[0])) 
+                            
+                            cv2.imwrite(os.path.join("/images/output_cgh",output_path), phase_out_8bit)
+                            print(os.path.join("/images/output_cgh",output_path))
                             recon_amp = recon_amp.squeeze().cpu().detach().numpy()
+                            target_amp_cpu=target_amp.squeeze().cpu().detach().numpy()
                             recon_srgb = utils.srgb_lin2gamma(np.clip(recon_amp**2, 0.0, 1.0))
-                            cv2.imwrite(os.path.join("./images/output_recon", f'{run_id}_{ik}.png'), (recon_srgb * np.iinfo(np.uint8).max).round().astype(np.uint8))
+                            target_srgb=utils.srgb_lin2gamma(np.clip(target_amp_cpu**2, 0.0, 1.0))
+                            cv2.imwrite(os.path.join("/images/output_recon", output_path), (recon_srgb * np.iinfo(np.uint8).max).round().astype(np.uint8))
+                            cv2.imwrite(os.path.join("/images/target_image", output_path), (target_srgb * np.iinfo(np.uint8).max).round().astype(np.uint8))
                         
 
                         if ik % log_interval == 0:
-                            csv_path=f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}'
+                            csv_path=f'{summaries_dir}/{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}_{wavelength}'
                             csv_path=csv_path+"_decrease.csv" if DECREASE else csv_path+".csv"
+                            
+                
                             
                             if(first_log):
                                 with open(csv_path, 'a', newline='') as file:

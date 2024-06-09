@@ -139,7 +139,7 @@ class SGD(nn.Module):
         self.preHarray=[]
         self.writer = writer
         self.dev = device
-        print("loss",loss)
+        # print("loss",loss)
         self.loss = loss.to(device)
        
 
@@ -161,8 +161,8 @@ class SGD(nn.Module):
                                                   writer=self.writer,
                                                   precomputed_H=preH)
         
-        print(torch.cuda.memory_allocated())
-        print(torch.cuda.max_memory_allocated())
+        # print(torch.cuda.memory_allocated())
+        # print(torch.cuda.max_memory_allocated())
         
         torch.cuda.empty_cache()
     

@@ -29,6 +29,7 @@ from utils.kernel_loader import KernelLoader
 from propagation_model import ModelPropagate
 from holonet import *
 from propagation_ASM import propagation_ASM
+from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 import time
 
 context_path="/images"
@@ -60,8 +61,10 @@ p.add_argument('--end_dis', type=int, default=200000, help='end of distances')
 p.add_argument('--num_split', type=int, default=100, help='number of distance points')
 p.add_argument('--plate_path', type=str, default=f"{context_path}/zoneplates", help='Directory where optimized phases will be saved.')
 # Set hyper parameter
-p.add_argument('--lr', type=float,default=1e-4)
-p.add_argument('--num_epoc',type=int,default=10)
+# p.add_argument('--lr', type=float,default=1e-4)
+# p.add_argument('--num_epoc',type=int,default=10)
+p.add_argument('--lr', type=float,default=8e-5)
+p.add_argument('--num_epoc',type=int,default=30)
 
 
 # parse arguments
@@ -93,8 +96,8 @@ print(f'   - optimizing phase with pitch {run_id} ... ')
 
 # Hyperparameters setting
 cm, mm, um, nm = 1e-2, 1e-3, 1e-6, 1e-9
-wavelength = (638 * nm, 520 * nm, 450 * nm)[channel]  # wavelength of each color
-feature_size = (6.4 * um, 6.4 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
+wavelength = (638 * nm, 517.9 * nm, 450 * nm)[channel]  # wavelength of each color
+feature_size = (3.74 * um,3.74 * um) if not ACTURAL_MODE else (3.74*um, 3.74*um) 
 slm_res = (1024, 2048)  if not ACTURAL_MODE else (2144,3840)
 image_res=roi_res=slm_res
 dtype = torch.float32  # default datatype (Note: the result may be slightly different if you use float64, etc.)
@@ -102,14 +105,15 @@ device = torch.device('cuda')  # The gpu you are using
 print(feature_size)
 
 # Options for the algorithm
-loss = nn.MSELoss().to(device)  # loss functions to use (try other loss functions!)
+loss = nn.MSELoss().to(device)
+ssim_loss=MS_SSIM(data_range=1,size_average=True,channel=1).to(device)  # loss functions to use (try other loss functions!)
 s0 = 0.95  # initial scale
 
-run_id+=f"_{slm_res[0]}_{feature_size[0]}"
+run_id+=f"_{slm_res[0]}_{feature_size[0]}_{wavelength}"
 run_id=run_id+"_decrease" if DECREASE else run_id
 root_path = os.path.join(opt.root_path, run_id, chan_str)  # path for saving out optimized phases
-kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
-plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{slm_res[0]}_{feature_size[0]}')
+kernel_path=os.path.join(opt.kernel_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}_{wavelength}')
+plate_path=os.path.join(opt.plate_path,f'{start_dis}_{end_dis}_{num_splits}_{alpha}_{slm_res[0]}_{feature_size[0]}_{wavelength}')
 kernel_path = kernel_path+"_out" if OUT_ALPHA else kernel_path
 plate_path=plate_path+"_out" if OUT_ALPHA else plate_path
 
@@ -142,6 +146,7 @@ for a in phase_box:
 distancebox=sorted(distancebox)
 
     
+print("dis_diff",distancebox[-1]-distancebox[0])
 
 if ORIGINAL:
     distancebox=[start]
@@ -317,11 +322,12 @@ for i in range(num_epochs):
             plate=zone_plate
         elif opt.distance_to_image==2:
             with torch.no_grad():
-                plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[dis_k]-0.2)/0.1,dtype=torch.float32)
+                plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[dis_k]-distancebox[0])/(distancebox[-1]-distancebox[0]),dtype=torch.float32)
                 plate=plate.to(device)
         else:
             plate=None
 
+        #0518ここを変えている 
 
         # preH=kLoader[dis_k].to(device)
         # preHb=kbLoder[dis_k].to(device)
@@ -348,7 +354,7 @@ for i in range(num_epochs):
         output_amp = output_amp + (scaled_out - output_amp).detach()        
 
         # Calculate loss and backword
-        loss_main=loss(output_amp,target_amp)
+        loss_main=-0.84*ssim_loss(output_amp,target_amp)+0.16*loss(output_amp,target_amp)
         loss_main.backward()
         optimizer.step()
 
@@ -413,7 +419,7 @@ for i in range(num_epochs):
                             zone_plate=torch.angle(zone_comp)
                             zone_plate=(zone_plate-torch.min(zone_plate))/(torch.max(zone_plate)-torch.min(zone_plate))    
                         else:
-                            zone_plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[val_k]-0.2)/0.1,dtype=torch.float32)
+                            zone_plate=torch.full([1,1,slm_res[0],slm_res[1]],fill_value=(distancebox[val_k]-distancebox[0])/distancebox[-1]-distancebox[0],dtype=torch.float32)
                             zone_plate=zone_plate.to(device)
              
                         val_plate=zone_plate
